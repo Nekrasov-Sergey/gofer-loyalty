@@ -41,8 +41,9 @@ func (s *Service) Login(ctx context.Context, user types.User) (sessionToken stri
 
 func (s *Service) createSession(ctx context.Context, userID int64) (sessionToken string, err error) {
 	sessionToken = uuid.NewString()
-	if err := s.repo.CreateSession(ctx, sessionToken, userID, time.Now().Add(time.Duration(s.config.SessionTTL))); err != nil {
-		return "", err
-	}
-	return sessionToken, nil
+	return sessionToken, s.repo.CreateSession(ctx, types.Session{
+		Token:     sessionToken,
+		UserID:    userID,
+		ExpiresAt: time.Now().Add(time.Duration(s.config.SessionTTL)),
+	})
 }

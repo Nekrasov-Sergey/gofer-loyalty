@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
 	"github.com/rs/zerolog/log"
 	"go.uber.org/multierr"
 
@@ -30,7 +31,7 @@ func run() error {
 	defer cancel()
 
 	l := logger.New()
-
+	client := resty.New()
 	r := router.New(gin.ReleaseMode, l)
 
 	cfg, err := config.New(l)
@@ -44,7 +45,7 @@ func run() error {
 	}
 	defer multierr.AppendInvoke(&err, multierr.Close(repo))
 
-	s := service.New(repo, cfg, l)
+	s := service.New(repo, client, cfg, l)
 
 	h := rest.New(s, cfg, l)
 	h.RegisterRoutes(r, repo)

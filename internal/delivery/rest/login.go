@@ -17,7 +17,7 @@ func (h *Handler) login(c *gin.Context) {
 
 	var user types.User
 	if err := c.ShouldBindJSON(&user); err != nil {
-		logger.RespondError(c, errors.Wrap(err, "не удалось распарсить тело запроса"), http.StatusBadRequest)
+		logger.RespondError(c, errors.Wrap(err, "неверный формат запроса"), http.StatusBadRequest)
 		return
 	}
 

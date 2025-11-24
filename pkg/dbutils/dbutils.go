@@ -63,7 +63,7 @@ func runWithRetries(ctx context.Context, fn func() error) (err error) {
 		}
 
 		if !isConnectionError(err) {
-			return errors.Wrap(err, "не удалось выполнить SQL-запрос (NamedSelect)")
+			return err
 		}
 
 		log.Error().Err(err).Msgf("Ошибка соединения c PostgreSQL, попытка №%d", i+1)

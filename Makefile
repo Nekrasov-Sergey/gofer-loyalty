@@ -8,6 +8,10 @@ run: build
 build:
 	@go build -o ./cmd/gophermart/main ./cmd/gophermart/main.go
 
+.PHONY: accrual
+accrual:
+	@RUN_ADDRESS=localhost:8081 ./cmd/accrual/accrual_darwin_arm64
+
 .PHONY: lint
 lint:
 	@golangci-lint run
