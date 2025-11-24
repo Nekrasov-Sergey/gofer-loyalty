@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pkg/errors"
@@ -48,23 +47,17 @@ where login = :login`
 	return user, nil
 }
 
-func (p *Postgres) CreateSession(ctx context.Context, token string, userID int64, expiresAt time.Time) error {
+func (p *Postgres) CreateSession(ctx context.Context, session types.Session) error {
 	const q = `insert into sessions (token, user_id, expires_at)
 values (:token, :user_id, :expires_at)`
 
-	args := map[string]any{
-		"token":      token,
-		"user_id":    userID,
-		"expires_at": expiresAt,
-	}
-
-	if err := dbutils.NamedExec(ctx, p.db, q, args); err != nil {
+	if err := dbutils.NamedExec(ctx, p.db, q, session); err != nil {
 		return errors.Wrap(err, "не удалось создать сессию")
 	}
 	return nil
 }
 
-func (p *Postgres) GetUserIDBySession(ctx context.Context, token string) (userID int64, err error) {
+func (p *Postgres) GetUserIDByTokenSession(ctx context.Context, token string) (userID int64, err error) {
 	const q = `select user_id
 from sessions
 where token = :token

@@ -22,7 +22,7 @@ func SessionMiddleware(repo service.Repository) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := repo.GetUserIDBySession(c.Request.Context(), sessionToken)
+		userID, err := repo.GetUserIDByTokenSession(c.Request.Context(), sessionToken)
 		if err != nil {
 			if errors.Is(err, errcodes.ErrUserUnauthorized) {
 				logger.RespondError(c, err, http.StatusUnauthorized)

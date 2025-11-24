@@ -15,6 +15,9 @@ import (
 type Service interface {
 	Register(ctx context.Context, user types.User) (sessionToken string, err error)
 	Login(ctx context.Context, user types.User) (sessionToken string, err error)
+
+	CreateOrder(ctx context.Context, order types.Order) error
+	GetOrders(ctx context.Context, userID int64) ([]types.ResponseOrder, error)
 }
 
 type Handler struct {
@@ -37,8 +40,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, repo service.Repository) {
 	userAPI.POST("/login", h.login)
 
 	userAuth := r.Group("/api/user", router.SessionMiddleware(repo))
-	userAuth.POST("/orders")
-	userAuth.GET("/orders")
+	userAuth.POST("/orders", h.createOrder)
+	userAuth.GET("/orders", h.getOrders)
 	userAuth.GET("/balance")
 	userAuth.POST("/balance/withdraw")
 	userAuth.GET("/withdrawals")

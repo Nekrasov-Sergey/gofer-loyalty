@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ type Config struct {
 	DatabaseURI          string       `env:"DATABASE_URI"`
 	AccrualSystemAddress string       `env:"ACCRUAL_SYSTEM_ADDRESS"`
 	SessionTTL           HourDuration `env:"SESSION_TTL"`
+	NumWorkers           int64        `env:"NUM_WORKERS"`
+	NumRetries           int          `env:"NUM_RETRIES"`
 }
 
 func New(logger zerolog.Logger) (*Config, error) {
@@ -30,14 +33,19 @@ func New(logger zerolog.Logger) (*Config, error) {
 
 	databaseURI := flag.String("d", "postgres://user:pass@localhost:5432/loyalty?sslmode=disable", "адрес подключения к базе данных")
 
-	accrualSystemAddress := NetAddress{
-		Host: "localhost",
-		Port: 8081,
+	accrualSystemAddress := URLAddress{
+		Scheme: "http",
+		Host:   "localhost",
+		Port:   8081,
 	}
-	flag.Var(&accrualSystemAddress, "r", "адрес системы расчёта начислений")
+	flag.Var(&accrualSystemAddress, "r", "адрес системы расчёта начислений (http://host:port)")
 
 	sessionTTL := HourDuration(24 * time.Hour)
 	flag.Var(&sessionTTL, "t", "время жизни сессии в часах")
+
+	numWorkers := flag.Int64("w", 5, "количество воркеров, делающих параллельные запросы во внешнюю систему")
+
+	numRetries := flag.Int("n", 3, "максимальное количество повторных запросов во внешнюю систему")
 
 	flag.Parse()
 
@@ -46,6 +54,8 @@ func New(logger zerolog.Logger) (*Config, error) {
 		DatabaseURI:          utils.Deref(databaseURI),
 		AccrualSystemAddress: accrualSystemAddress.String(),
 		SessionTTL:           sessionTTL,
+		NumWorkers:           utils.Deref(numWorkers),
+		NumRetries:           utils.Deref(numRetries),
 	}
 
 	if err := env.Parse(&cfg); err != nil {
@@ -57,6 +67,8 @@ func New(logger zerolog.Logger) (*Config, error) {
 		Str("database_uri", cfg.DatabaseURI).
 		Str("accrual_system_address", cfg.AccrualSystemAddress).
 		Str("session_ttl", cfg.SessionTTL.String()).
+		Int64("num_workers", cfg.NumWorkers).
+		Int("num_retries", cfg.NumRetries).
 		Msg("Загружена конфигурация приложения")
 
 	return &cfg, nil
@@ -86,6 +98,48 @@ func (a *NetAddress) Set(s string) error {
 	}
 	a.Host = host
 	a.Port = port
+	return nil
+}
+
+type URLAddress struct {
+	Scheme string
+	Host   string
+	Port   int
+}
+
+func (a *URLAddress) String() string {
+	return a.Scheme + "://" + a.Host + ":" + strconv.Itoa(a.Port)
+}
+
+func (a *URLAddress) Set(s string) error {
+	u, err := url.Parse(s)
+	if err != nil {
+		return errors.Wrap(err, "не удалось распарсить адрес")
+	}
+
+	if u.Scheme == "" {
+		u.Scheme = "http"
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		host = "localhost"
+	}
+
+	portStr := u.Port()
+	if portStr == "" {
+		return errors.New("порт обязателен")
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return errors.Wrap(err, "неверный порт")
+	}
+
+	a.Scheme = u.Scheme
+	a.Host = host
+	a.Port = port
+
 	return nil
 }
 
