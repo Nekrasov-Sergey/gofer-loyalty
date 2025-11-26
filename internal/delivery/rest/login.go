@@ -6,7 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
+	"go.uber.org/multierr"
 
+	"github.com/Nekrasov-Sergey/gofer-loyalty/internal/router"
 	"github.com/Nekrasov-Sergey/gofer-loyalty/internal/types"
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/errcodes"
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/logger"
@@ -15,19 +17,19 @@ import (
 func (h *Handler) login(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	var user types.User
+	user := &types.User{}
 	if err := c.ShouldBindJSON(&user); err != nil {
-		logger.RespondError(c, errors.Wrap(err, "неверный формат запроса"), http.StatusBadRequest)
+		logger.RespondError(c, multierr.Append(errcodes.ErrInvalidRequestFormat, err), http.StatusBadRequest)
 		return
 	}
 
 	if user.Login == "" {
-		logger.RespondError(c, errors.New("отсутствует логин"), http.StatusBadRequest)
+		logger.RespondError(c, errcodes.ErrLoginIsMissing, http.StatusBadRequest)
 		return
 	}
 
 	if user.Password == "" {
-		logger.RespondError(c, errors.New("отсутствует пароль"), http.StatusBadRequest)
+		logger.RespondError(c, errcodes.ErrPasswordIsMissing, http.StatusBadRequest)
 		return
 	}
 
@@ -48,7 +50,7 @@ func (h *Handler) login(c *gin.Context) {
 
 func (h *Handler) setCookie(c *gin.Context, sessionToken string) {
 	c.SetCookie(
-		"session",
+		router.CookieSession,
 		sessionToken,
 		int(time.Duration(h.config.SessionTTL).Seconds()),
 		"/api/user",

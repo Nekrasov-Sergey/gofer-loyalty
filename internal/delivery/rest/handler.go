@@ -13,11 +13,15 @@ import (
 )
 
 type Service interface {
-	Register(ctx context.Context, user types.User) (sessionToken string, err error)
-	Login(ctx context.Context, user types.User) (sessionToken string, err error)
+	Register(ctx context.Context, user *types.User) (sessionToken string, err error)
+	Login(ctx context.Context, user *types.User) (sessionToken string, err error)
 
-	CreateOrder(ctx context.Context, order types.Order) error
-	GetOrders(ctx context.Context, userID int64) ([]types.ResponseOrder, error)
+	CreateOrder(ctx context.Context, order *types.Order) error
+	GetOrders(ctx context.Context, userID int64) ([]types.OrderResponse, error)
+
+	GetBalance(ctx context.Context, userID int64) (*types.BalanceResponse, error)
+	WithdrawBalance(ctx context.Context, withdrawal *types.Withdrawal) error
+	GetWithdrawals(ctx context.Context, userID int64) ([]types.WithdrawalResponse, error)
 }
 
 type Handler struct {
@@ -35,14 +39,21 @@ func New(service Service, config *config.Config, logger zerolog.Logger) *Handler
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine, repo service.Repository) {
-	userAPI := r.Group("/api/user")
-	userAPI.POST("/register", h.register)
-	userAPI.POST("/login", h.login)
-
-	userAuth := r.Group("/api/user", router.SessionMiddleware(repo))
-	userAuth.POST("/orders", h.createOrder)
-	userAuth.GET("/orders", h.getOrders)
-	userAuth.GET("/balance")
-	userAuth.POST("/balance/withdraw")
-	userAuth.GET("/withdrawals")
+	api := r.Group("/api")
+	{
+		user := api.Group("/user")
+		user.POST("/register", h.register)
+		user.POST("/login", h.login)
+		{
+			authorized := user.Group("", router.SessionMiddleware(repo))
+			authorized.POST("/orders", h.createOrder)
+			authorized.GET("/balance", h.getBalance)
+			authorized.POST("/balance/withdraw", h.withdrawBalance)
+			{
+				compressed := authorized.Group("", router.CompressMiddleware())
+				compressed.GET("/orders", h.getOrders)
+				compressed.GET("/withdrawals", h.getWithdrawals)
+			}
+		}
+	}
 }

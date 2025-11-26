@@ -12,16 +12,18 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
+	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/errcodes"
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/utils"
 )
 
 type Config struct {
-	RunAddress           string       `env:"RUN_ADDRESS"`
-	DatabaseURI          string       `env:"DATABASE_URI"`
-	AccrualSystemAddress string       `env:"ACCRUAL_SYSTEM_ADDRESS"`
-	SessionTTL           HourDuration `env:"SESSION_TTL"`
-	NumWorkers           int64        `env:"NUM_WORKERS"`
-	NumRetries           int          `env:"NUM_RETRIES"`
+	RunAddress           string         `env:"RUN_ADDRESS"`
+	DatabaseURI          string         `env:"DATABASE_URI"`
+	AccrualSystemAddress string         `env:"ACCRUAL_SYSTEM_ADDRESS"`
+	SessionTTL           HourDuration   `env:"SESSION_TTL"`
+	NumRetries           int            `env:"NUM_RETRIES"`
+	Interval             SecondDuration `env:"INTERVAL"`
+	WorkerCount          int            `env:"WORKER_COUNT"`
 }
 
 func New(logger zerolog.Logger) (*Config, error) {
@@ -43,9 +45,12 @@ func New(logger zerolog.Logger) (*Config, error) {
 	sessionTTL := HourDuration(24 * time.Hour)
 	flag.Var(&sessionTTL, "t", "время жизни сессии в часах")
 
-	numWorkers := flag.Int64("w", 5, "количество воркеров, делающих параллельные запросы во внешнюю систему")
-
 	numRetries := flag.Int("n", 3, "максимальное количество повторных запросов во внешнюю систему")
+
+	interval := SecondDuration(5 * time.Second)
+	flag.Var(&interval, "i", "интервал запуска воркера")
+
+	workerCount := flag.Int("w", 10, "количество воркеров")
 
 	flag.Parse()
 
@@ -54,8 +59,9 @@ func New(logger zerolog.Logger) (*Config, error) {
 		DatabaseURI:          utils.Deref(databaseURI),
 		AccrualSystemAddress: accrualSystemAddress.String(),
 		SessionTTL:           sessionTTL,
-		NumWorkers:           utils.Deref(numWorkers),
 		NumRetries:           utils.Deref(numRetries),
+		Interval:             interval,
+		WorkerCount:          utils.Deref(workerCount),
 	}
 
 	if err := env.Parse(&cfg); err != nil {
@@ -67,8 +73,9 @@ func New(logger zerolog.Logger) (*Config, error) {
 		Str("database_uri", cfg.DatabaseURI).
 		Str("accrual_system_address", cfg.AccrualSystemAddress).
 		Str("session_ttl", cfg.SessionTTL.String()).
-		Int64("num_workers", cfg.NumWorkers).
 		Int("num_retries", cfg.NumRetries).
+		Str("interval", cfg.Interval.String()).
+		Int("worker_count", cfg.WorkerCount).
 		Msg("Загружена конфигурация приложения")
 
 	return &cfg, nil
@@ -86,11 +93,11 @@ func (a *NetAddress) String() string {
 func (a *NetAddress) Set(s string) error {
 	parts := strings.SplitN(s, ":", 2)
 	if len(parts) != 2 {
-		return errors.New("адрес должен быть в формате host:port")
+		return errcodes.ErrAddressInvalidFormat
 	}
 	port, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return errors.Wrap(err, "неверный порт")
+		return errcodes.ErrPortNotNumber
 	}
 	host := parts[0]
 	if host == "" {
@@ -128,12 +135,12 @@ func (a *URLAddress) Set(s string) error {
 
 	portStr := u.Port()
 	if portStr == "" {
-		return errors.New("порт обязателен")
+		return errcodes.ErrPortIsRequired
 	}
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return errors.Wrap(err, "неверный порт")
+		return errcodes.ErrPortNotNumber
 	}
 
 	a.Scheme = u.Scheme
@@ -164,5 +171,29 @@ func (d *HourDuration) UnmarshalText(text []byte) error {
 		return errors.Wrap(err, "значение должно быть в часах")
 	}
 	*d = HourDuration(time.Duration(hours) * time.Hour)
+	return nil
+}
+
+type SecondDuration time.Duration
+
+func (d *SecondDuration) String() string {
+	return time.Duration(*d).String()
+}
+
+func (d *SecondDuration) Set(s string) error {
+	seconds, err := strconv.Atoi(s)
+	if err != nil {
+		return errors.Wrap(err, "значение должно быть в секундах")
+	}
+	*d = SecondDuration(time.Duration(seconds) * time.Second)
+	return nil
+}
+
+func (d *SecondDuration) UnmarshalText(text []byte) error {
+	seconds, err := strconv.Atoi(string(text))
+	if err != nil {
+		return errors.Wrap(err, "значение должно быть в секундах")
+	}
+	*d = SecondDuration(time.Duration(seconds) * time.Second)
 	return nil
 }

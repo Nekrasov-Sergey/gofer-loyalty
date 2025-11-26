@@ -16,13 +16,26 @@ import (
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/utils"
 )
 
-func (h *Handler) createOrder(c *gin.Context) {
+func (h *Handler) withdrawBalance(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := c.GetInt64(router.ContextUserID)
 
-	var orderNumber int64
-	if err := c.ShouldBindJSON(&orderNumber); err != nil {
+	withdrawal := &types.Withdrawal{}
+	if err := c.ShouldBindJSON(&withdrawal); err != nil {
 		logger.RespondError(c, multierr.Append(errcodes.ErrInvalidRequestFormat, err), http.StatusBadRequest)
+		return
+	}
+
+	if withdrawal.Withdrawn.InexactFloat64() < 0 {
+		logger.RespondError(c, errcodes.ErrNegativeWithdrawal, http.StatusBadRequest)
+	}
+
+	withdrawal.UserID = userID
+	withdrawal.ProcessedAt = time.Now()
+
+	orderNumber, err := strconv.ParseInt(withdrawal.OrderNumber, 10, 64)
+	if err != nil {
+		logger.RespondError(c, errcodes.ErrOrderNumberMustBeNumeric, http.StatusBadRequest)
 		return
 	}
 
@@ -31,23 +44,14 @@ func (h *Handler) createOrder(c *gin.Context) {
 		return
 	}
 
-	err := h.service.CreateOrder(ctx, &types.Order{
-		Number:     strconv.FormatInt(orderNumber, 10),
-		UserID:     userID,
-		UploadedAt: time.Now(),
-	})
-	if err != nil {
-		if errors.Is(err, errcodes.ErrOrderAlreadyUploadedByUser) {
-			c.Status(http.StatusOK)
-			return
-		}
-		if errors.Is(err, errcodes.ErrOrderAlreadyUploadedByAnotherUser) {
-			logger.RespondError(c, err, http.StatusConflict)
+	if err := h.service.WithdrawBalance(ctx, withdrawal); err != nil {
+		if errors.Is(err, errcodes.ErrNotEnoughBalance) {
+			logger.RespondError(c, err, http.StatusPaymentRequired)
 			return
 		}
 		logger.RespondError(c, err, http.StatusInternalServerError)
 		return
 	}
 
-	c.Status(http.StatusAccepted)
+	c.Status(http.StatusOK)
 }
