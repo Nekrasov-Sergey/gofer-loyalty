@@ -11,23 +11,40 @@ import (
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/errcodes"
 )
 
-func (s *Service) Register(ctx context.Context, user types.User) (sessionToken string, err error) {
+func (s *Service) Register(ctx context.Context, user *types.User) (sessionToken string, err error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
 	user.Password = string(hashedPassword)
 
-	userID, err := s.repo.CreateUser(ctx, user)
+	sessionToken = uuid.NewString()
+
+	err = s.repo.WithTx(ctx, func(txRepo Repository) error {
+		userID, err := txRepo.CreateUser(ctx, user)
+		if err != nil {
+			return err
+		}
+
+		if err := txRepo.CreateBalance(ctx, userID); err != nil {
+			return err
+		}
+
+		return txRepo.CreateSession(ctx, &types.Session{
+			Token:     sessionToken,
+			UserID:    userID,
+			ExpiresAt: time.Now().Add(time.Duration(s.config.SessionTTL)),
+		})
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return s.createSession(ctx, userID)
+	return sessionToken, nil
 }
 
-func (s *Service) Login(ctx context.Context, user types.User) (sessionToken string, err error) {
-	dbUser, err := s.repo.GetUser(ctx, user.Login)
+func (s *Service) Login(ctx context.Context, user *types.User) (sessionToken string, err error) {
+	dbUser, err := s.repo.GetUserByLogin(ctx, user.Login)
 	if err != nil {
 		return "", err
 	}
@@ -36,14 +53,10 @@ func (s *Service) Login(ctx context.Context, user types.User) (sessionToken stri
 		return "", errcodes.ErrInvalidCredentials
 	}
 
-	return s.createSession(ctx, dbUser.ID)
-}
-
-func (s *Service) createSession(ctx context.Context, userID int64) (sessionToken string, err error) {
 	sessionToken = uuid.NewString()
-	return sessionToken, s.repo.CreateSession(ctx, types.Session{
+	return sessionToken, s.repo.CreateSession(ctx, &types.Session{
 		Token:     sessionToken,
-		UserID:    userID,
+		UserID:    dbUser.ID,
 		ExpiresAt: time.Now().Add(time.Duration(s.config.SessionTTL)),
 	})
 }

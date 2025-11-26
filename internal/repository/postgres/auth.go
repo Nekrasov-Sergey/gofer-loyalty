@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pkg/errors"
 
@@ -12,14 +13,14 @@ import (
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/errcodes"
 )
 
-func (p *Postgres) CreateUser(ctx context.Context, user types.User) (userID int64, err error) {
+func (p *Postgres) CreateUser(ctx context.Context, user *types.User) (userID int64, err error) {
 	const q = `insert into users (login, password)
 values (:login, :password)
 returning id`
 
 	if err := dbutils.NamedGet(ctx, p.db, &userID, q, user); err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return 0, errcodes.ErrLoginAlreadyExists
 		}
 		return 0, errors.Wrapf(err, "не удалось создать пользователя %s", user.Login)
@@ -28,7 +29,7 @@ returning id`
 	return userID, nil
 }
 
-func (p *Postgres) GetUser(ctx context.Context, login string) (user types.User, err error) {
+func (p *Postgres) GetUserByLogin(ctx context.Context, login string) (user *types.User, err error) {
 	const q = `select id, login, password
 from users
 where login = :login`
@@ -37,17 +38,18 @@ where login = :login`
 		"login": login,
 	}
 
-	if err := dbutils.NamedGet(ctx, p.db, &user, q, args); err != nil {
+	user = &types.User{}
+	if err := dbutils.NamedGet(ctx, p.db, user, q, args); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return types.User{}, errcodes.ErrInvalidCredentials
+			return nil, errcodes.ErrInvalidCredentials
 		}
-		return types.User{}, err
+		return nil, err
 	}
 
 	return user, nil
 }
 
-func (p *Postgres) CreateSession(ctx context.Context, session types.Session) error {
+func (p *Postgres) CreateSession(ctx context.Context, session *types.Session) error {
 	const q = `insert into sessions (token, user_id, expires_at)
 values (:token, :user_id, :expires_at)`
 
@@ -57,7 +59,7 @@ values (:token, :user_id, :expires_at)`
 	return nil
 }
 
-func (p *Postgres) GetUserIDByTokenSession(ctx context.Context, token string) (userID int64, err error) {
+func (p *Postgres) GetUserIDByToken(ctx context.Context, token string) (userID int64, err error) {
 	const q = `select user_id
 from sessions
 where token = :token

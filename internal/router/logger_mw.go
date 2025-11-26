@@ -33,8 +33,8 @@ func LoggerMiddleware(baseLogger zerolog.Logger) gin.HandlerFunc {
 			if status == http.StatusInternalServerError {
 				errLog = errLog.Stack()
 			}
-			if len(c.Errors) > 0 {
-				errLog.Err(c.Errors[0].Err)
+			for _, e := range c.Errors {
+				errLog.Err(e.Err)
 			}
 			errLog.Msg("Ошибка выполнения запроса")
 			return

@@ -11,18 +11,21 @@ import (
 	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/logger"
 )
 
-const ContextUserID = "user_id"
+const (
+	ContextUserID = "user_id"
+	CookieSession = "session"
+)
 
 // SessionMiddleware проверяет сессию пользователя
 func SessionMiddleware(repo service.Repository) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		sessionToken, err := c.Cookie("session")
+		sessionToken, err := c.Cookie(CookieSession)
 		if err != nil {
 			logger.RespondError(c, errcodes.ErrUserUnauthorized, http.StatusUnauthorized)
 			return
 		}
 
-		userID, err := repo.GetUserIDByTokenSession(c.Request.Context(), sessionToken)
+		userID, err := repo.GetUserIDByToken(c.Request.Context(), sessionToken)
 		if err != nil {
 			if errors.Is(err, errcodes.ErrUserUnauthorized) {
 				logger.RespondError(c, err, http.StatusUnauthorized)

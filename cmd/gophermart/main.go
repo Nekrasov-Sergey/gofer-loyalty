@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -46,10 +47,33 @@ func run() error {
 	defer multierr.AppendInvoke(&err, multierr.Close(repo))
 
 	s := service.New(repo, client, cfg, l)
+	go s.RunAccrualWorker(ctx)
 
 	h := rest.New(s, cfg, l)
 	h.RegisterRoutes(r, repo)
 
 	a := app.New(r, cfg.RunAddress, l)
-	return a.Run(ctx)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- a.Run()
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-serverErr:
+		if err != nil {
+			return err
+		}
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	if err := a.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+
+	l.Info().Msg("Приложение остановлено")
+	return nil
 }

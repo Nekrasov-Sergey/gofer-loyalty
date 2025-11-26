@@ -2,43 +2,11 @@ package router
 
 import (
 	"compress/gzip"
-	"io"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-
-	"github.com/Nekrasov-Sergey/gofer-loyalty/pkg/logger"
 )
-
-type compressReader struct {
-	r  io.ReadCloser
-	zr *gzip.Reader
-}
-
-func newCompressReader(r io.ReadCloser) (*compressReader, error) {
-	zr, err := gzip.NewReader(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return &compressReader{
-		r:  r,
-		zr: zr,
-	}, nil
-}
-
-func (r *compressReader) Read(p []byte) (n int, err error) {
-	return r.zr.Read(p)
-}
-
-func (r *compressReader) Close() error {
-	if err := r.r.Close(); err != nil {
-		return err
-	}
-	return r.zr.Close()
-}
 
 type compressWriter struct {
 	gin.ResponseWriter
@@ -56,6 +24,8 @@ func (w *compressWriter) Write(data []byte) (int, error) {
 		if !w.isCompressed {
 			w.ResponseWriter.Header().Set("Content-Encoding", "gzip")
 			w.ResponseWriter.Header().Set("Vary", "Accept-Encoding")
+			w.ResponseWriter.Header().Del("Content-Length")
+
 			w.zw = gzip.NewWriter(w.ResponseWriter)
 			w.isCompressed = true
 		}
@@ -74,21 +44,6 @@ func (w *compressWriter) Close() error {
 // CompressMiddleware добавляет сжатие и декомпрессию данных в gin
 func CompressMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Проверяем, что клиент отправил серверу сжатые данные в формате gzip
-		if strings.Contains(c.GetHeader("Content-Encoding"), "gzip") {
-			cr, err := newCompressReader(c.Request.Body)
-			if err != nil {
-				logger.RespondError(c, err, http.StatusInternalServerError)
-				return
-			}
-			defer func(cr *compressReader) {
-				if err := cr.Close(); err != nil {
-					log.Error().Err(err).Msg("Не удалось закрыть compressReader")
-				}
-			}(cr)
-			c.Request.Body = cr
-		}
-
 		// Проверяем, что клиент умеет получать от сервера сжатые данные в формате gzip
 		if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
 			cw := newCompressWriter(c.Writer)
